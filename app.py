@@ -6,16 +6,16 @@ import os
 
 secret_key = os.urandom(24)
 app = Flask(__name__)
-app.secret_key = secret_key  # replace abcd with your secret key 
+app.secret_key = secret_key 
 
 conn = psycopg2.connect(
     
     # Replace abcd with your respective database values...
 
-    host="http://localhost:5050",
+    host="localhost",
     database="budget",
     user="postgres",
-    password="L@urels81156537."
+    password="L@urels81156357."
 )
 
 mail = ''
@@ -80,7 +80,7 @@ def register():
 
             if existing_user:
                 flash('Email already exists!', 'mailError')
-                return render_template('signup.html', error_message='Email already exists')
+                return render_template('register.html', error_message='Email already exists')
             else:
                 cursor.execute("INSERT INTO users (username, email, password) VALUES (%s, %s, %s)",
                            (username, email, password))
@@ -93,9 +93,9 @@ def register():
 
         else:
             flash('Passwords do not match!', 'passwordError')
-            return render_template('signup.html', error_message='Passwords do not match')
+            return render_template('register.html', error_message='Passwords do not match')
 
-    response = app.make_response(render_template('signup.html'))
+    response = app.make_response(render_template('register.html'))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
 
@@ -106,7 +106,113 @@ def dashboard():
     cursor.execute("SELECT * FROM transactions where email = %s ORDER BY date", (mail,))
     transactions = cursor.fetchall()
     cursor.close()
-    return render_template('index.html', transactions=transactions)
+    return render_template('dashboard.html', transactions=transactions)
+
+@app.route('/add_transaction', methods=['POST'])
+def add_transaction():
+    transaction = request.get_json()
+    text = transaction.get('text')
+    amount = transaction.get('amount')
+    date = transaction.get('date')
+
+    if not text or not amount or not date:
+        return jsonify({'error': 'Invalid transaction data'})
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO transactions (text, amount, date, email) VALUES (%s, %s, %s, %s)",
+                       (text, amount, date, mail))
+        conn.commit()
+        cursor.close()
+    except psycopg2.Error:
+        return jsonify({'error': 'Failed to insert transaction into the database'})
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transactions WHERE text = %s AND amount = %s AND date = %s AND email = %s",
+                       (text, amount, date, mail))
+        new_transaction = cursor.fetchone()
+        cursor.close()
+    except psycopg2.Error as e:
+        return jsonify({'error': 'Failed to retrieve the newly created transaction'})
+
+    new_transaction_dict = {
+        'transaction_id': new_transaction[0],
+        'text': new_transaction[1],
+        'amount': new_transaction[2],
+        'date': new_transaction[3],
+        'email': new_transaction[4]
+    }
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transactions where email = %s", (mail,))
+        transactions = cursor.fetchall()
+        cursor.close()
+    except psycopg2.Error as e:
+        return jsonify({'error': 'Failed to retrieve transactions from the database'})
+
+    transactions_list = []
+    for transaction in transactions:
+        transaction_dict = {
+            'transaction_id': transaction[0],
+            'text': transaction[1],
+            'amount': transaction[2],
+            'date': transaction[3],
+            'email': transaction[4]
+        }
+        transactions_list.append(transaction_dict)
+
+    return jsonify({'transaction': new_transaction_dict, 'transactions': transactions_list})
+
+@app.route('/delete_transaction/<int:transaction_id>', methods=['DELETE'])
+def delete_transaction(transaction_id):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM transactions WHERE transaction_id = %s", (transaction_id,))
+        conn.commit()
+        cursor.close()
+    except psycopg2.Error:
+        return jsonify({'error': 'Failed to delete transaction from the database'})
+
+    return jsonify({'message': 'Transaction deleted successfully'})
+
+@app.route('/get_transactions', methods=['GET'])
+def get_transactions():
+    try:
+        start_date = request.args.get('start-date')
+        end_date = request.args.get('end-date')
+
+        cursor = conn.cursor()
+
+        if start_date and end_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date, '%Y-%m-%d')
+
+            cursor.execute(
+                "SELECT * FROM transactions WHERE email = %s AND date >= %s AND date <= %s",
+                (mail, start_date, end_date)
+            )
+        else:
+            cursor.execute("SELECT * FROM transactions WHERE email = %s", (mail,))
+
+        transactions = cursor.fetchall()
+        cursor.close()
+
+        transactions_list = []
+        for transaction in transactions:
+            transaction_dict = {
+                'transaction_id': transaction[0],
+                'text': transaction[1],
+                'amount': transaction[2],
+                'date': transaction[3],
+                'email': transaction[4]
+            }
+            transactions_list.append(transaction_dict)
+
+        return jsonify({'transactions': transactions_list})
+    except psycopg2.Error as e:
+        return jsonify({'error': 'Failed to retrieve transactions from the database'})
 
 @app.after_request
 def add_cache_control_headers(response):
@@ -114,4 +220,6 @@ def add_cache_control_headers(response):
     return response
 
 if __name__ == '__main__':
+    """_summary_
+    """    
     app.run(debug=True)
