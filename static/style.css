@@ -264,7 +264,7 @@ button, #category, #type, #type option{
   .transaction.container {
     position: fixed ;
     top: 150px;
-    right: 100px;
+    right: 160px;
   }
 
   body {
@@ -279,6 +279,6 @@ button, #category, #type, #type option{
 
   .first {
     position: relative;
-    left: 50px;
+    left: 160px;
   }
 }
